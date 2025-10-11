@@ -1,0 +1,92 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_IMAGE = 'compliance-validator'
+        DOCKER_TAG = "${BUILD_NUMBER}"
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_REPO = 'fahimr97/compliance-validator'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out source code...'
+                checkout scm
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo 'Running unit tests...'
+                sh 'python3 -m pytest tests/ -v --tb=short'
+            }
+        }
+        
+        stage('Security Scan') {
+            steps {
+                echo 'Running security scans...'
+                sh 'python3 -m bandit -r app/ -f json -o bandit-report.json || true'
+                sh 'cat bandit-report.json'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building Docker image...'
+                script {
+                    def image = docker.build("${DOCKER_REPO}:${DOCKER_TAG}", "-f docker/Dockerfile .")
+                    env.DOCKER_IMAGE_ID = image.id
+                }
+            }
+        }
+        
+        stage('Push to Registry') {
+            steps {
+                echo 'Pushing Docker image to registry...'
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
+                        def image = docker.image("${DOCKER_REPO}:${DOCKER_TAG}")
+                        image.push()
+                        image.push('latest')
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to k3s') {
+            steps {
+                echo 'Deploying to k3s cluster...'
+                script {
+                    // Update deployment with new image
+                    sh """
+                        sed 's|IMAGE_TAG|${DOCKER_TAG}|g' k8s/deployment.yaml > k8s/deployment-${BUILD_NUMBER}.yaml
+                        kubectl apply -f k8s/deployment-${BUILD_NUMBER}.yaml
+                        kubectl rollout status deployment/compliance-validator -n default
+                    """
+                }
+            }
+        }
+        
+        stage('Verify Deployment') {
+            steps {
+                echo 'Verifying deployment...'
+                sh 'kubectl get pods -l app=compliance-validator'
+                sh 'kubectl get services -l app=compliance-validator'
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo 'Pipeline completed'
+            archiveArtifacts artifacts: 'bandit-report.json', allowEmptyArchive: true
+        }
+        success {
+            echo 'Pipeline succeeded!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
