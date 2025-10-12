@@ -48,7 +48,9 @@ class ComplianceValidator:
             "hack",
             "bypass", 
             "disable_security",
-            "admin_override"
+            "admin_override",
+            "backdoor",
+            "exploit"
         ]
         
         self.valid_categories = [
