@@ -1,0 +1,25 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Docker Hub
+      - echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+      - aws eks update-kubeconfig --name cv-eks-cluster --region us-west-2
+  
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building Docker image
+      - docker build -t fahimr97/compliance-validator:$CODEBUILD_BUILD_NUMBER .
+      - docker tag fahimr97/compliance-validator:$CODEBUILD_BUILD_NUMBER fahimr97/compliance-validator:latest
+  
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing Docker image
+      - docker push fahimr97/compliance-validator:$CODEBUILD_BUILD_NUMBER
+      - docker push fahimr97/compliance-validator:latest
+      - echo Deploying to EKS
+      - kubectl set image deployment/compliance-validator compliance-validator=fahimr97/compliance-validator:$CODEBUILD_BUILD_NUMBER -n default
+      - kubectl rollout status deployment/compliance-validator -n default
