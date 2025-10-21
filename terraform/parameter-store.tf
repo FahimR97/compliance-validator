@@ -7,5 +7,5 @@ resource "aws_ssm_parameter" "docker_username" {
 resource "aws_ssm_parameter" "docker_password" {
   name  = "/codebuild/docker-password"
   type  = "SecureString"
-  value = "PLACEHOLDER_CHANGE_ME"
+  value = var.docker_hub_token
 }
